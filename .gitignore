@@ -1,0 +1,10 @@
+# OAuth token caches
+chatgpt_codex/
+gemini_oauth/
+xai_oauth/
+*_oauth/
+
+# Secrets and runtime files
+secrets.yaml
+permission.yaml
+*.lock
