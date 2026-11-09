@@ -1,3 +1,114 @@
+# Godot Development
+
+### Project structure (domain-based, DevDuck style)
+Organize by domain (entity/system), not by file type. An entity's scene, script, art, sounds, and resources live together.
+
+Top-level folders under `res://`:
+- `assets/` — game-wide assets not owned by any entity: global fonts, general audio/music, UI art, credits.
+- `common/` — project-agnostic, portable code that could be copied into another game: state machine, UI scaler, general-purpose shaders, timers/time tracking. No game-specific logic here.
+- `config/` — player-facing settings and their data: volume, controls/rebinding, gameplay options.
+- `entities/` — everything that exists or acts in the game world: player, NPCs, enemies, items, weather, and gameplay systems (crafting, cooking, combat). Largest folder.
+- `localization/` — translation files.
+- `stages/` — playable maps, levels, rooms, and their tile layouts, one folder each.
+- `utilities/` — global autoloads/singletons: game manager, signal bus, scene switcher, save service, Portal (web games).
+- `addons/` and `native/` stay at the root.
+
+Nesting in `entities/`:
+- Mirror the class hierarchy in folders. Base class at the top, subtypes in subfolders, concrete implementations deeper:
+  `entities/items/item.gd` → `entities/items/tools/tool_item.gd` → `entities/items/tools/pickaxe/pickaxe_item.gd` (+ its .tscn, sprites, .tres).
+- Gameplay components shared by several entities (HealthComponent, Hitbox, Hurtbox) go in `entities/components/`, not `common/`.
+
+Naming:
+- snake_case for all folders, scenes, scripts, and resources. PascalCase for root node names and `class_name`.
+- A folder's main scene and script share its name (`entities/player/player.tscn`, `player.gd`).
+
+Rules:
+- Before creating a file, decide its domain owner and put it there. Promote to `assets/` or `common/` only when it's truly shared or portable, and say so.
+- Never create a new top-level folder without asking.
+- Systems communicate via signals, groups, the signal bus, or exported NodePaths — no hardcoded `get_node()` paths across scenes or `get_parent()` chains.
+- Moves and renames are done in the Godot editor; flag them instead of moving files directly.
+
+## Project type detection
+- Determine project type from the project root directory name.
+- If it starts with `wg_`, it is a WEB GAME: apply both "General Godot" and "Web Games (wg_)" sections below. Web rules win on conflict.
+- Otherwise, apply only "General Godot".
+- Godot version: check `project.godot` (`config/features`) and use that version's APIs. Godot 4.x only.
+
+## General Godot
+
+### Environment
+- Primary language GDScript. Performance-critical code may move to C++ via GDExtension (godot-cpp). Keep GDScript APIs swappable for native classes.
+
+### GDScript conventions
+- Static typing everywhere: typed vars, params, returns (`func take_damage(amount: int) -> void:`). Use `:=` only when the type is obvious.
+- Official style guide: snake_case files/functions/vars, PascalCase `class_name` and nodes, CONSTANT_CASE constants.
+- Signals in past tense (`health_depleted`, `order_served`). "Call down, signal up."
+- `@export` for tunables, `@onready` for node refs. Use `%UniqueName` or exported NodePaths, never long `get_node("../../X")` chains.
+- Data (items, enemies, recipes, levels) goes in custom `Resource` classes (`.tres`), not dictionaries in scripts.
+- Autoloads only for game state, save/load, event bus, platform services. No gameplay logic in autoloads.
+- Prefer small composable components (HealthComponent, Hitbox, Hurtbox) over deep inheritance.
+
+### Godot 4 only — never use Godot 3 APIs
+- No `KinematicBody2D`, `yield`, `export var`, `onready var`, `instance()`, `JavaScript` singleton, `connect("sig", obj, "method")`.
+- Use `CharacterBody2D`, `await`, `@export`, `@onready`, `instantiate()`, `JavaScriptBridge`, `sig.connect(callable)`.
+- Use `TileMapLayer` nodes, not the deprecated `TileMap` node.
+- If unsure an API exists in the project's version, say so; check `godot --headless --dump-extension-api` output if present.
+
+### Files and scenes
+- `.tscn` / `.tres` are text: only make small, surgical edits. Never regenerate a whole scene. Describe structural changes for the editor instead.
+- Never edit or commit `.godot/`, `*.import`, or export output. Keep `*.uid` files with their scripts/resources.
+- Flag any file rename/move so it can be done in-editor (references break otherwise).
+- Layout: `scenes/`, `scripts/`, `resources/`, `assets/`, `addons/`, `native/` (GDExtension).
+
+### Running and checking
+- Validate headlessly: `godot --headless --path . --quit` or `godot --headless --check-only --script <file>`.
+- Run GUT/gdUnit4 headless if present; don't add a test framework without asking.
+- Never launch the game windowed unless asked.
+
+### GDExtension (C++)
+- Source in `native/`, SCons build against a godot-cpp submodule pinned to the engine version.
+- C++17, RAII, `Ref<>` for RefCounted, register classes in `register_types.cpp`, keep the `.gdextension` manifest paths in sync.
+- Only port to C++ after profiling shows a real hotspot.
+
+## Web Games (wg_)
+
+### Targets
+- Primary portal: Poki. Fallback: CrazyGames. Code must work on both.
+- Initial download budget: aim ≤ 5 MB compressed, hard ceiling 8 MB. Treat every new asset or engine feature as a size cost and call it out.
+- 2D only. Must run on mid/low-end mobile browsers and desktop. Support touch AND mouse/keyboard.
+- Layout: 16:9, responsive. Stretch mode `canvas_items`, aspect `expand`; test portrait-phone and desktop sizes.
+
+### Engine and export
+- Renderer: Compatibility (WebGL 2) only. No Forward+/Mobile-only features, no compute shaders.
+- Single-threaded web export (thread support OFF). No `Thread`, `WorkerThreadPool`, or threaded resource loading.
+- Use a custom stripped web export template when available (`disable_3d=yes`, `optimize=size`, build profile). Don't use 3D nodes or features excluded by it.
+- Don't add plugins/addons without stating their size impact.
+
+### Assets
+- Textures: power-of-two atlases where practical, smallest resolution that looks right, lossy WebP for large art. No 4K textures.
+- Audio: OGG Vorbis, mono SFX, low bitrate (~64–96 kbps music). Stream music, don't preload.
+- Fonts: one or two fonts, subset if possible.
+- Keep the first scene tiny; load later content on demand (`ResourceLoader.load` per level/area, single-threaded).
+
+### Browser behavior
+- No audio until first user input (autoplay policy). Start audio on first tap/click.
+- Saves via `user://` (backed by IndexedDB). Wrap in a SaveService; handle failure gracefully (private mode).
+- No external links, network calls, analytics, or third-party ads outside the portal SDK.
+- Handle tab hide/focus loss: pause game and mute audio.
+- No `OS.shell_open`, file dialogs, or desktop-only APIs on web; gate with `OS.has_feature("web")`.
+
+### Portal SDK abstraction
+- All portal calls go through ONE autoload, `Portal` (scripts/platform/portal.gd), with backends: PokiBackend, CrazyGamesBackend, NullBackend (desktop/dev).
+- Select backend by export feature tag (`poki`, `crazygames`); default NullBackend.
+- Game code calls only `Portal` methods: `loading_finished()`, `gameplay_start()`, `gameplay_stop()`, `show_interstitial() -> bool` (await), `show_rewarded() -> bool` (await), `is_ad_playing()`.
+- Backends use `JavaScriptBridge` to call the portal JS SDK; JS callbacks via `JavaScriptBridge.create_callback`, keep references alive.
+- Ad rules: pause the game and mute audio during any ad; resume after. Interstitials only at natural breaks (level end, game over → restart), never mid-action. Rewarded ads only on explicit player choice.
+- Call `gameplay_start()` when the player is actually playing and `gameplay_stop()` on pause, menus, level end, and before ads.
+
+### Size checks
+- After a web export, report the compressed size of `.wasm` + `.pck` (gzip/brotli) and flag anything pushing past budget.
+- When adding an asset, state its size.
+
 # Development Guidelines
 
 ## Philosophy
