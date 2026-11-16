@@ -1,6 +1,6 @@
 # Godot Development
 
-### Project structure (domain-based, DevDuck style)
+## Project structure (domain-based, DevDuck style)
 Organize by domain (entity/system), not by file type. An entity's scene, script, art, sounds, and resources live together.
 
 Top-level folders under `res://`:
@@ -36,8 +36,19 @@ Rules:
 
 ## General Godot
 
+## Session context
+- At session start, read docs/GDD.md, docs/PLAN.md, and the last ~50 lines of docs/PROGRESS.md.
+- Work on one PLAN.md task at a time unless told otherwise.
+- At session end, check off finished tasks in PLAN.md and append a dated entry to PROGRESS.md
+  (done, decisions, known issues, last brotli size). Never rewrite earlier PROGRESS entries.
+- Never edit GDD.md without asking.
+
 ### Environment
 - Primary language GDScript. Performance-critical code may move to C++ via GDExtension (godot-cpp). Keep GDScript APIs swappable for native classes.
+- The user edits scenes and play-tests in the Windows Godot editor.
+- The agent uses the Linux Godot at ~/bin/godot (same version), headless.
+- The Windows editor may have the project open. After editing .tscn/.tres, tell the user which files changed so they reload them. Never run --import if the user says the editor is importing.
+- Git runs from WSL only. Neovim is the script editor.
 
 ### GDScript conventions
 - Static typing everywhere: typed vars, params, returns (`func take_damage(amount: int) -> void:`). Use `:=` only when the type is obvious.
@@ -61,14 +72,40 @@ Rules:
 - Layout: `scenes/`, `scripts/`, `resources/`, `assets/`, `addons/`, `native/` (GDExtension).
 
 ### Running and checking
-- Validate headlessly: `godot --headless --path . --quit` or `godot --headless --check-only --script <file>`.
 - Run GUT/gdUnit4 headless if present; don't add a test framework without asking.
 - Never launch the game windowed unless asked.
+- Verify before reporting done (in order, stop and fix on failure)
+- gdformat <changed .gd files> then gdlint <changed .gd files> (respect .gdlintrc).
+- Parse check: godot --headless --path . --quit; fix every script error.
+- If addons/gut/ exists: godot --headless --path . -s addons/gut/gut_cmdln.gd (uses .gutconfig.json). Tests that click Controls must run without --headless.
+- For gameplay/UI changes, use godot-mcp: run_project -> get_debug_output -> stop_project. Always stop the project afterwards.
+- Never report a task done with failing lint, errors, or tests; say what is still failing.
+- New logic gets a GUT test in test/unit/test_<name>.gd (extends GutTest) when GUT is present.
 
 ### GDExtension (C++)
 - Source in `native/`, SCons build against a godot-cpp submodule pinned to the engine version.
 - C++17, RAII, `Ref<>` for RefCounted, register classes in `register_types.cpp`, keep the `.gdextension` manifest paths in sync.
 - Only port to C++ after profiling shows a real hotspot.
+
+### Tools and MCPs
+#### Docs (context7)
+- Before using a Godot API you are not certain exists in Godot 4.x (or that changed from 3.x), look it up with context7 first. Prefer docs over memory.
+
+#### godot-mcp
+- Use create_scene, add_node, load_sprite, save_scene for NEW scenes.
+- For existing complex scenes, prefer small surgical text edits or describe the change for the editor.
+- Pass Linux paths (/home/fortydeea/fortydeea_dev/...).
+
+#### Art (PixelLab)
+- PixelLab costs credits. Before generating, state exactly what you will generate (count, size, directions, animations) and wait for confirmation unless the user already specified it. Never regenerate in a loop; after 2 bad results, stop and ask.
+- Keep a consistent style: reuse the project's reference sprite (assets/sprites/_reference/) and the size the user set (default 32x32).
+- Raw outputs go to assets/_raw/<name>/; cleaned sprites to assets/sprites/<name>/.
+- Post-process with tools/sprite_post.py (Pillow: palette snap, sheet packing) if present.
+- Never prompt for recognizable copyrighted characters or named art styles.
+- Pixel art imports: project texture filter Nearest; no mipmaps.
+
+#### Audio
+- The user makes SFX in jsfxr/ChipTone as WAV. Convert with ffmpeg -i in.wav -ac 1 -c:a libvorbis -q:a 3 out.ogg; put results in assets/audio/.
 
 ## Web Games (wg_)
 
@@ -109,7 +146,38 @@ Rules:
 - After a web export, report the compressed size of `.wasm` + `.pck` (gzip/brotli) and flag anything pushing past budget.
 - When adding an asset, state its size.
 
+### Build and size
+- Export single-threaded (Thread Support off), Compatibility renderer: godot --headless --path . --export-release "Web" build/web/index.html (use the project's preset name).
+- Export filters must exclude test/*, addons/gut/*, assets/_raw/*.
+- After export, optimize the wasm (keep the original until the browser check passes): wasm-opt -Oz --strip-debug build/web/index.wasm -o build/web/index.opt.wasm If it fails with a feature validation error, add --enable-bulk-memory --enable-sign-ext --enable-nontrapping-float-to-int --enable-mutable-globals. Report the before/after brotli size; only replace index.wasm with the optimized one if it is smaller AND the Playwright check passes on it.
+- After every export, report compressed sizes: brotli -c build/web/index.wasm | wc -c and brotli -c build/web/index.pck | wc -c. Target initial download <= 5 MB, total <= 8 MB. Flag any increase over 10% from the previous build.
+
+### Browser check (Playwright)
+- Serve: python3 -m http.server 8000 -d build/web in the background.
+- With playwright: open http://localhost:8000, wait for the game to load, take a screenshot, read console errors, and click through the first screen.
+- Report load errors, WebGL errors, and console errors. Close the browser and stop the server when done.
+
+### Portal SDK
+- All platform calls go through one autoload (Platform) that no-ops when no SDK is present, so Poki and CrazyGames can be swapped.
+- gameplayStart/gameplayStop around actual play; commercialBreak only at natural breaks; mute audio and pause during ads.
+- Do not add the Poki SDK addon unless the user asks (it is integrated after Poki approval).
+
 # Development Guidelines
+
+## Project context (all projects)
+- Context files, if present:
+  - docs/SPEC.md — what the project is: goal, users, constraints, tech stack, non-goals. User-owned.
+    (Game projects use docs/GDD.md instead.)
+  - docs/PLAN.md — task checklist; each task has acceptance criteria.
+  - docs/PROGRESS.md — append-only dated log.
+- At session start, read SPEC/GDD, PLAN, and the last ~50 lines of PROGRESS before doing anything.
+- If these files are missing in a project with more than trivial scope, offer to create them (don't create them unasked).
+- Work on one PLAN.md task at a time unless told otherwise. If a request isn't in PLAN.md, ask whether to add it.
+- A task is done only when its acceptance criteria are met and the project's checks pass (tests, lint, build).
+- At session end, check off finished tasks in PLAN.md and append a dated entry to PROGRESS.md:
+  done, decisions (with the reason), known issues, next step. Never rewrite earlier entries.
+- Never edit SPEC.md/GDD.md without asking; propose changes instead.
+- Record decisions in PROGRESS.md, not only in chat, so the next session sees them.
 
 ## Philosophy
 

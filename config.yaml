@@ -81,6 +81,47 @@ extensions:
     args: []
     envs: {}
     timeout: 300
+  pixellab:
+    type: streamable_http
+    name: pixellab
+    enabled: true
+    uri: https://api.pixellab.ai/mcp
+    headers:
+      Authorization: "Bearer $PIXELLAB_API_KEY"
+    env_keys:
+      - PIXELLAB_API_KEY
+    timeout: 600
+  godot:
+    type: stdio
+    name: godot
+    enabled: true
+    cmd: godot-mcp
+    args: []
+    envs:
+      GODOT_PATH: /home/fortydeea/bin/godot
+    timeout: 300
+  context7:
+    type: streamable_http
+    name: context7
+    enabled: true
+    uri: https://mcp.context7.com/mcp
+    headers:
+      Authorization: "Bearer $CONTEXT7_API_KEY"
+    env_keys:
+      - CONTEXT7_API_KEY
+    timeout: 120
+  playwright:
+    type: stdio
+    name: playwright
+    enabled: true
+    args:
+      - "--browser"
+      - "chromium"
+      - "--executable-path"
+      - "/usr/bin/chromium"
+      - "--headless"
+      - "--isolated"
+    timeout: 300
 GOOSE_THINKING_EFFORT: high
 active_provider: openai
 providers:
