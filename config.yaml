@@ -78,7 +78,7 @@ extensions:
     description: Enable context mode for goose
     display_name: Context Mode
     cmd: context-mode
-    args: []
+    args: ["server", "--agent", "goose"]
     envs: {}
     timeout: 300
   pixellab:
